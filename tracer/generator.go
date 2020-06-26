@@ -1,16 +1,18 @@
 package tracer
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
+	"io/ioutil"
 	"sort"
 	"text/template"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+	"golang.org/x/tools/imports"
 )
 
 type Generator struct {
@@ -150,14 +152,11 @@ func (g *Generator) render(types []Type) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	file, err := os.OpenFile(g.OutputFile, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer file.Close()
+
+	outputBuffet := bytes.NewBuffer(nil)
 
 	pkgName := types[0].PkgName
-	err = tp.Execute(file, map[string]interface{}{
+	err = tp.Execute(outputBuffet, map[string]interface{}{
 		"pkgName": pkgName,
 		"tracers": types,
 		"prefix":  g.Prefix,
@@ -166,7 +165,12 @@ func (g *Generator) render(types []Type) error {
 		return errors.WithStack(err)
 	}
 
-	return nil
+	res, err := imports.Process("", outputBuffet.Bytes(), nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	return errors.WithStack(ioutil.WriteFile(g.OutputFile, res, 0666))
 }
 
 func (g *Generator) needToParseFile(filename string) bool {
